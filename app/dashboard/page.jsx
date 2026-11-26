@@ -29,6 +29,11 @@ import { fileToResizedDataUrl } from "../utils/ImageUtils.js"
 import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import logo from "../../public/logo.png"
 
+// Base URL for every backend call. Set NEXT_PUBLIC_BACKEND_URL in .env.local
+// (no trailing slash needed). If it is empty, calls go to the same origin.
+const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/+$/, "")
+const apiUrl = (path) => `${BACKEND_URL}${path.startsWith("/") ? path : `/${path}`}`
+
 const queryClient = new QueryClient()
 
 const MAX_IMAGES = 4
@@ -99,14 +104,14 @@ const authHeaders = async () => {
 }
 
 const connectGithub = async () => {
-    const res = await fetch("/api/github/connect", { headers: await authHeaders() })
+    const res = await fetch(apiUrl("/api/github/connect"), { headers: await authHeaders() })
     const data = await res.json()
     if (!res.ok || !data.url) throw new Error(data.error || "Could not start the GitHub connection.")
     window.location.href = data.url
 }
 
 const createRepo = async (name, description, isPrivate = true) => {
-    const res = await fetch("/api/github/repos", {
+    const res = await fetch(apiUrl("/api/github/repos"), {
         method: "POST",
         headers: await authHeaders(),
         body: JSON.stringify({ name, description, isPrivate }),
@@ -115,7 +120,7 @@ const createRepo = async (name, description, isPrivate = true) => {
 }
 
 const pushFiles = async (repo, files, message, branch = "main") => {
-    const res = await fetch("/api/github/commit", {
+    const res = await fetch(apiUrl("/api/github/commit"), {
         method: "POST",
         headers: await authHeaders(),
         body: JSON.stringify({ repo, files, message, branch }),
@@ -815,7 +820,7 @@ function PageContent() {
         setBusy(true)
         try {
             const headers = await authHeaders()
-            const res = await fetch("/api/supabase/connect", { headers })
+            const res = await fetch(apiUrl("/api/supabase/connect"), { headers })
             const text = await res.text()
 
             let data = {}

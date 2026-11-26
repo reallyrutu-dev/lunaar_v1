@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getUser, getOctokit } from "@/lib/github";
+import { getUser, getOctokit } from "../../../libs/github";
 
 function fail(e) {
   if (e.status === 401) {

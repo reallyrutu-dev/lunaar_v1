@@ -33,6 +33,11 @@ import { streamChat } from "../../api/chat/streamChat"
 import db from "../../../public/db.png"
 import logo from "../../../public/logo.png"
 
+// Base URL for every backend call. Set NEXT_PUBLIC_BACKEND_URL in .env.local
+// (no trailing slash needed). If it is empty, calls go to the same origin.
+const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/+$/, "")
+const apiUrl = (path) => `${BACKEND_URL}${path.startsWith("/") ? path : `/${path}`}`
+
 const started_chats = new Set()
 
 const MAX_IMAGES = 4
@@ -316,7 +321,7 @@ export default function ChatClient() {
     const loadProject = async (folder_name) => {
         try {
             const { data: { session: fresh } } = await supabase.auth.getSession()
-            const res = await fetch(`/api/project?chat_id=${chat_id}`, {
+            const res = await fetch(apiUrl(`/api/project?chat_id=${chat_id}`), {
                 headers: { Authorization: `Bearer ${fresh.access_token}` },
             })
             const result = await res.json()
@@ -457,7 +462,7 @@ export default function ChatClient() {
 
     const loadEnv = async () => {
         try {
-            const res = await fetch(`/api/env?chat_id=${chat_id}`, { headers: await authHeaders() })
+            const res = await fetch(apiUrl(`/api/env?chat_id=${chat_id}`), { headers: await authHeaders() })
             const data = await res.json()
             if (!res.ok) return
             const saved_keys = data.keys || []
@@ -495,7 +500,7 @@ export default function ChatClient() {
             (key) => !env_rows.some((row) => row.key.trim().toUpperCase() === key)
         )
 
-        const res = await fetch("/api/env", {
+        const res = await fetch(apiUrl("/api/env"), {
             method: "POST",
             headers: await authHeaders(),
             body: JSON.stringify({ chat_id, vars, remove }),
@@ -508,7 +513,7 @@ export default function ChatClient() {
     }
 
     const runDeploy = async () => {
-        const res = await fetch("/api/deploy_render", {
+        const res = await fetch(apiUrl("/api/deploy_render"), {
             method: "POST",
             headers: await authHeaders(),
             body: JSON.stringify({ chat_id: details?.id || chat_id }),
@@ -578,7 +583,7 @@ export default function ChatClient() {
         setCommits_state({ loading: true, error: "" })
 
         try {
-            const res = await fetch(`/api/github/${user.id}/${details?.id || chat_id}`, {
+            const res = await fetch(apiUrl(`/api/github/${user.id}/${details?.id || chat_id}`), {
                 method: "GET",
             })
             const data = await res.json().catch(() => null)
@@ -607,7 +612,7 @@ export default function ChatClient() {
     const approveMigration = async (index, sql, confirm_destructive = false) => {
         setMigration_state((prev) => ({ ...prev, [index]: { status: "running", error: "" } }))
         try {
-            const res = await fetch("/api/supabase/approve", {
+            const res = await fetch(apiUrl("/api/supabase/approve"), {
                 method: "POST",
                 headers: await authHeaders(),
                 body: JSON.stringify({ sql, confirm_destructive }),
@@ -656,7 +661,7 @@ export default function ChatClient() {
 
     const checkApk = async (started_at) => {
         try {
-            const res = await fetch(`/api/apk?chat_id=${chat_id}`, { headers: await authHeaders() })
+            const res = await fetch(apiUrl(`/api/apk?chat_id=${chat_id}`), { headers: await authHeaders() })
             const result = await res.json()
 
             if (!res.ok) {
@@ -700,7 +705,7 @@ export default function ChatClient() {
         setApk({ phase: "starting", run_url: "", error: "" })
 
         try {
-            const res = await fetch("/api/apk", {
+            const res = await fetch(apiUrl("/api/apk"), {
                 method: "POST",
                 headers: await authHeaders(),
                 body: JSON.stringify({ chat_id }),
@@ -727,7 +732,7 @@ export default function ChatClient() {
 
     const downloadApk = async () => {
         try {
-            const res = await fetch(`/api/apk?chat_id=${chat_id}&download=1`, { headers: await authHeaders() })
+            const res = await fetch(apiUrl(`/api/apk?chat_id=${chat_id}&download=1`), { headers: await authHeaders() })
             const result = await res.json()
             if (!res.ok || !result.url) {
                 setApk((a) => ({ ...a, error: result.error || "Could not get the download link" }))
@@ -755,7 +760,7 @@ export default function ChatClient() {
     const Render_upload_key = async () => {
         if (render_key.trim().length < 5) return
 
-        const response = await fetch("/api/render", {
+        const response = await fetch(apiUrl("/api/render"), {
             method: "POST",
             headers: await authHeaders(),
             body: JSON.stringify({ api_key: render_key }),
