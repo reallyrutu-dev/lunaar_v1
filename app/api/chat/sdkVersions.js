@@ -4,6 +4,7 @@ import path from "node:path"
 export const SDK = "57"
 
 const TEMPLATE_DIR = path.resolve(
+    /*turbopackIgnore: true*/
     process.env.TEMPLATE_DIR || path.join(process.cwd(), "sandbox", "expo-template")
 )
 
