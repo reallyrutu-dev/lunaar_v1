@@ -12,9 +12,9 @@ const PARTICLE_COUNT = 2800
 const PARTICLE_COLOR = "rgb(255, 249, 240)"
 
 /**
- * Same black hole as the dashboard, packaged as a standalone component.
- * It fills its parent (which must be position: relative / absolute with a size).
- * `centerY` is the vertical position of the hole as a fraction of the parent height.
+- Same black hole as the dashboard, packaged as a standalone component.
+- It fills its parent (which must be position: relative / absolute with a size).
+- `centerY` is the vertical position of the hole as a fraction of the parent height.
  */
 function BlackHole({ centerY = 0.2, centerYMobile = 0.17 }) {
     const canvas_ref = useRef(null)
@@ -250,6 +250,12 @@ const PLANS = [
 
 export default function Home() {
     const [menu_open, setMenu_open] = useState(false)
+    const [currentYear, setCurrentYear] = useState(2026)
+    
+    useEffect(() => {
+        setCurrentYear(new Date().getFullYear())
+    }, [])
+
     const close = () => setMenu_open(false)
 
     useEffect(() => {
@@ -423,7 +429,7 @@ export default function Home() {
             </main>
 
             <footer className={styles.footer}>
-                <span className={styles.footer_brand}>© {new Date().getFullYear()} Lunaar</span>
+                <span className={styles.footer_brand}>© {currentYear} Lunaar</span>
                 <nav className={styles.footer_links} aria-label="Footer">
                     {NAV_LINKS.map(({ label, href }) => (
                         <Link key={href} href={href}>

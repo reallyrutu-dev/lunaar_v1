@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
-export const dynamic = "force-dynamic";
-
 function encrypt(plain: string) {
   const hex = process.env.TOKEN_ENCRYPTION_KEY;
   if (!hex || hex.length !== 64) throw new Error("TOKEN_ENCRYPTION_KEY must be 64 hex chars");
