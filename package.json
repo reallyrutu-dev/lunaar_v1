@@ -1,0 +1,36 @@
+{
+  "name": "lunaar",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@animateicons/react": "^0.13.0",
+    "@google/genai": "^2.32.0",
+    "@octokit/rest": "^22.0.1",
+    "@supabase/supabase-js": "^2.118.0",
+    "@tanstack/react-query": "^5.105.0",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.41.0",
+    "crypto": "^1.0.1",
+    "express": "^5.3.0",
+    "jszip": "^3.10.2",
+    "lucide-react": "^1.65.0",
+    "next": "16.4.3",
+    "qrcode.react": "^4.2.0",
+    "razorpay": "^2.9.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "snack-sdk": "^6.6.2",
+    "supabase": "^2.122.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.3"
+  }
+}
