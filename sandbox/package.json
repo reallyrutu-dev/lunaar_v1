@@ -3,11 +3,14 @@
   "compilerOptions": {
     "strict": false,
     "noImplicitAny": false,
+    "noEmit": true,
     "skipLibCheck": true,
     "allowJs": true,
     "checkJs": false,
-    "jsx": "react-native"
+    "jsx": "react-native",
+    "resolveJsonModule": true,
+    "esModuleInterop": true
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist", "backend", "ios", "android", ".expo"]
 }

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: lunaar-sandbox
+    runtime: docker
+    rootDir: sandbox
+    plan: standard
+    healthCheckPath: /health
+    envVars:
+      - key: SANDBOX_SECRET
+        sync: false
+      - key: MAX_JOBS
+        value: "2"

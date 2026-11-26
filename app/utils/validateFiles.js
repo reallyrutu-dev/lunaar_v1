@@ -1,10 +1,10 @@
 import { parse } from "@babel/parser"
 
 const CODE_FILE = /\.(js|jsx|ts|tsx|mjs|cjs)$/
-const MOBILE_PREFIX = "mobile/"
-const MAX_PROBLEMS = 30
-const USE_BUNDLE = process.env.VALIDATE_BUNDLE === "1"
-const SANDBOX_TIMEOUT_MS = USE_BUNDLE ? 75000 : 30000
+const LOCATION_SUFFIX = /\s*\(\d+:\d+\)$/
+const SANDBOX_URL = process.env.SANDBOX_URL
+const SANDBOX_SECRET = process.env.SANDBOX_SECRET
+const SANDBOX_TIMEOUT_MS = Number(process.env.SANDBOX_TIMEOUT_MS) || 55000
 
 const pluginsFor = (path) => {
     if (/\.tsx$/.test(path)) return ["jsx", "typescript"]
@@ -15,7 +15,7 @@ const pluginsFor = (path) => {
 const checkSyntax = (files) => {
     const problems = []
     for (const file of files) {
-        if (!CODE_FILE.test(file.path)) continue
+        if (!CODE_FILE.test(file.path) || typeof file.content !== "string") continue
         try {
             parse(file.content, {
                 sourceType: "unambiguous",
@@ -25,8 +25,8 @@ const checkSyntax = (files) => {
             problems.push({
                 path: file.path,
                 line: e.loc?.line ?? null,
-                column: e.loc?.column ?? null,
-                message: e.message,
+                column: e.loc ? e.loc.column + 1 : null,
+                message: String(e.message || "Syntax error").replace(LOCATION_SUFFIX, ""),
                 source: "syntax",
             })
         }
@@ -34,71 +34,52 @@ const checkSyntax = (files) => {
     return problems
 }
 
-const checkInSandbox = async (files) => {
-    if (!process.env.SANDBOX_URL) return []
-
-    const payload = {}
-    for (const file of files) {
-        if (!file.path.startsWith(MOBILE_PREFIX)) continue
-        payload[file.path.slice(MOBILE_PREFIX.length)] = file.content
+const checkTypes = async (files) => {
+    if (!SANDBOX_URL || !SANDBOX_SECRET) {
+        return [{ source: "sandbox", message: "Sandbox is not configured" }]
     }
-    if (Object.keys(payload).length === 0) return []
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), SANDBOX_TIMEOUT_MS)
 
     try {
-        const res = await fetch(`${process.env.SANDBOX_URL}/check`, {
+        const res = await fetch(`${SANDBOX_URL.replace(/\/+$/, "")}/validate`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${process.env.SANDBOX_TOKEN}`,
+                "x-sandbox-secret": SANDBOX_SECRET,
             },
-            body: JSON.stringify({ files: payload, bundle: USE_BUNDLE }),
-            signal: AbortSignal.timeout(SANDBOX_TIMEOUT_MS),
+            body: JSON.stringify({
+                files: files
+                    .filter((f) => f.path.startsWith("mobile/") && typeof f.content === "string")
+                    .map((f) => ({ path: f.path, content: f.content })),
+            }),
+            signal: controller.signal,
         })
 
         if (!res.ok) {
-            console.log("sandbox check failed with status", res.status)
-            return []
+            return [{ source: "sandbox", message: `Sandbox responded with ${res.status}` }]
         }
 
         const data = await res.json()
-        if (data.ok) return []
-
-        const problems = Array.isArray(data.problems) ? data.problems : []
-        return problems.map((p) => ({
-            path: p.path ? `${MOBILE_PREFIX}${String(p.path).replace(/^\.\//, "")}` : "",
-            line: p.line ?? null,
-            column: p.column ?? null,
-            message: String(p.message || "Unknown problem"),
-            source: p.source || "sandbox",
-        }))
+        return Array.isArray(data?.problems) ? data.problems : []
     } catch (e) {
-        console.log("sandbox check skipped:", e?.message)
-        return []
+        return [
+            {
+                source: "sandbox",
+                message: e?.name === "AbortError" ? "Sandbox timed out" : e?.message || "Sandbox unreachable",
+            },
+        ]
+    } finally {
+        clearTimeout(timer)
     }
-}
-
-const dedupe = (problems) => {
-    const seen = new Set()
-    const out = []
-    for (const p of problems) {
-        const key = `${p.path}:${p.line}:${p.message}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        out.push(p)
-    }
-    return out
 }
 
 export async function VaildateFiles(files) {
     if (!Array.isArray(files) || files.length === 0) return []
 
-    const [syntaxProblems, sandboxProblems] = await Promise.all([
-        Promise.resolve(checkSyntax(files)),
-        checkInSandbox(files),
-    ])
+    const syntax_problems = checkSyntax(files)
+    if (syntax_problems.length > 0) return syntax_problems
 
-    const brokenPaths = new Set(syntaxProblems.map((p) => p.path))
-    const others = sandboxProblems.filter((p) => !brokenPaths.has(p.path))
-
-    return dedupe([...syntaxProblems, ...others]).slice(0, MAX_PROBLEMS)
+    return await checkTypes(files)
 }
