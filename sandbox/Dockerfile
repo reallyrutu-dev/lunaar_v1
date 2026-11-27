@@ -14,7 +14,7 @@ RUN npx expo install react-native-web react-dom @expo/metro-runtime expo-status-
 
 RUN npm install --no-audit --no-fund --legacy-peer-deps @react-navigation/native @react-navigation/native-stack @react-navigation/bottom-tabs @supabase/supabase-js date-fns zod nanoid @expo-google-fonts/inter @expo-google-fonts/dm-sans @expo-google-fonts/manrope @expo-google-fonts/plus-jakarta-sans @expo-google-fonts/space-grotesk @expo-google-fonts/sora @expo-google-fonts/outfit @expo-google-fonts/nunito @expo-google-fonts/lora
 
-COPY tsconfig.json /opt/expo-template/tsconfig.json
+RUN echo '{"extends":"expo/tsconfig.base","compilerOptions":{"strict":false,"noImplicitAny":false,"noEmit":true,"skipLibCheck":true,"allowJs":true,"checkJs":false,"jsx":"react-native","resolveJsonModule":true,"esModuleInterop":true},"include":["**/*.ts","**/*.tsx"],"exclude":["node_modules","dist","backend","ios","android",".expo"]}' > /opt/expo-template/tsconfig.json
 
 WORKDIR /app
 

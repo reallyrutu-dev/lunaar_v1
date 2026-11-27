@@ -11,6 +11,19 @@
     "resolveJsonModule": true,
     "esModuleInterop": true
   },
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "dist", "backend", "ios", "android", ".expo"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "backend",
+    "ios",
+    "android",
+    ".expo"
+  ],
+  "dependencies": {
+    "express": "^5.3.0"
+  }
 }
