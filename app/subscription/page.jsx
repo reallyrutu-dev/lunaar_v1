@@ -9,6 +9,10 @@ import styles from "./subscription.module.css"
 
 const RAZORPAY_SRC = "https://checkout.razorpay.com/v1/checkout.js"
 
+const apiUrl = (path) => {
+  const p = path.startsWith("/") ? path : `/${path}`
+  return p === "/api" || p.startsWith("/api/") ? p : `/api${p}`
+}
 const features = (tokens, apps) => [
     `${tokens} million tokens`,
     `Up to ${apps} apps (approx. 50k tokens per app)`,
@@ -107,19 +111,20 @@ export default function Page() {
                 return
             }
 
-            const res = await fetch("/api/razorpay/create_subscription", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: user.id, plan_id }),
-})
+            const res = await fetch(apiUrl("/razorpay/create_subscription"), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: user.id, plan_id }),
+            })
 
-const subscription = await res.json().catch(() => ({}))
+            const subscription = await res.json().catch(() => ({}))
 
-if (!res.ok || !subscription.id) {
-    alert(subscription.error || `Could not start the subscription (HTTP ${res.status}).`)
-    setBusy(false)
-    return
-}
+            if (!res.ok || !subscription.id) {
+                alert(subscription.error || `Could not start the subscription (HTTP ${res.status}).`)
+                setBusy(false)
+                return
+            }
+
             const options = {
                 key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
                 subscription_id: subscription.id,
@@ -133,7 +138,7 @@ if (!res.ok || !subscription.id) {
                 },
                 handler: async function (response) {
                     try {
-                        const verifyRes = await fetch("/api/razorpay/verify_subscription", {
+                        const verifyRes = await fetch(apiUrl("/razorpay/verify_subscription"), {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
@@ -167,7 +172,6 @@ if (!res.ok || !subscription.id) {
             alert("Something went wrong. Please try again.")
             setBusy(false)
         }
-        // When checkout opens successfully, busy is released by ondismiss / handler / payment.failed.
     }
 
     if (loading || !user) return null

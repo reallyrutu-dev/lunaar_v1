@@ -50,7 +50,7 @@ const FIRST_TOKEN_TIMEOUT_MS = Number(process.env.AI_FIRST_TOKEN_TIMEOUT_MS) || 
 const AZURE_FIRST_TOKEN_TIMEOUT_MS = Number(process.env.AZURE_FIRST_TOKEN_TIMEOUT_MS) || 120000
 const AZURE_REASONING_EFFORT = String(process.env.AZURE_REASONING_EFFORT || "low").toLowerCase()
 
-const MAX_REPAIRS = process.env.AI_MAX_REPAIRS ? Number(process.env.AI_MAX_REPAIRS) : 1
+const MAX_REPAIRS = process.env.AI_MAX_REPAIRS ? Number(process.env.AI_MAX_REPAIRS) : 2
 const CHECK_BUDGET_MS = Number(process.env.AI_CHECK_BUDGET_MS) || 60000
 const REPAIR_BUDGET_MS = Number(process.env.AI_REPAIR_BUDGET_MS) || 60000
 const REQUEST_LIMIT_MS = Number(process.env.AI_REQUEST_LIMIT_MS) || 285000
@@ -201,7 +201,7 @@ const SUPABASE_CONNECT_HINT = [
 ].join(" ")
 
 const IMPORT_RULES_HINT =
-    'Icons come from "@expo/vector-icons" (for example import { Ionicons } from "@expo/vector-icons"). Never write "expo/vector-icons" without the @. Only import packages that are listed in package.json or bundled with Expo.'
+    'Icons come from "@expo/vector-icons" (for example import { Ionicons } from "@expo/vector-icons"). Never write "expo/vector-icons" without the @. Only import packages that are listed in package.json or bundled with Expo. Every relative import must point to a file that exists in the project and must use a name that file really exports. Every JSX component must be imported or defined in its own file.'
 
 const ALLOWED_PACKAGE_NAMES = [...Object.keys(EXPO_VERSIONS), ...Object.keys(JS_VERSIONS)]
 
@@ -287,6 +287,178 @@ const missingPackageProblems = (merged) => {
                 problems.push(
                     `${path}: package "${name}" is not in the allowed package list for Expo SDK ${SDK}. Remove the import and write the logic yourself or use an allowed package.`
                 )
+            }
+        }
+    }
+    return problems
+}
+
+const CODE_FILE = /\.(js|jsx|ts|tsx)$/i
+const JSX_FILE = /\.(js|jsx|tsx)$/i
+const RESOLVE_EXTENSIONS = ["", ".ts", ".tsx", ".js", ".jsx", ".json"]
+const ASSET_EXTENSION = /\.(png|jpe?g|gif|webp|svg|ttf|otf|mp3|mp4|wav|json)$/i
+const LOCAL_IMPORT = /import\s+(?!type\b)([^;'"]*?)\s+from\s+["'](\.{1,2}(?:\/[^"']*)?)["']/g
+const JSX_TAG = /(?<![\w$.])<([A-Z][\w$]+)(?=[\s>/.])/g
+
+const REQUIRED_UI_EXPORTS = [
+    "Screen",
+    "AppText",
+    "Button",
+    "IconButton",
+    "Card",
+    "Input",
+    "Badge",
+    "Chip",
+    "StatTile",
+    "SectionHeader",
+    "ListRow",
+    "EmptyState",
+    "FadeIn",
+]
+const REQUIRED_THEME_EXPORTS = ["palettes", "spacing", "radius", "fonts", "look", "useTheme"]
+
+const resolveLocal = (fromPath, spec, merged) => {
+    const parts = fromPath.split("/").slice(0, -1)
+    for (const part of spec.split("/")) {
+        if (part === "." || part === "") continue
+        if (part === "..") parts.pop()
+        else parts.push(part)
+    }
+    const base = parts.join("/")
+    for (const ext of RESOLVE_EXTENSIONS) {
+        if (merged.has(base + ext)) return base + ext
+    }
+    for (const ext of RESOLVE_EXTENSIONS.slice(1)) {
+        if (merged.has(`${base}/index${ext}`)) return `${base}/index${ext}`
+    }
+    return null
+}
+
+const collectExports = (content) => {
+    const names = new Set()
+    let hasDefault = false
+    let wildcard = false
+
+    const declarations =
+        /export\s+(?:declare\s+)?(?:async\s+)?(?:function\s*\*?|const|let|var|class|enum|type|interface)\s+([A-Za-z_$][\w$]*)/g
+    for (const m of content.matchAll(declarations)) names.add(m[1])
+
+    for (const m of content.matchAll(/export\s*\{([^}]*)\}/g)) {
+        for (const part of m[1].split(",")) {
+            const cleaned = part.trim().replace(/^type\s+/, "")
+            if (!cleaned) continue
+            const pieces = cleaned.split(/\s+as\s+/)
+            const exported = (pieces[1] || pieces[0]).trim()
+            if (exported === "default") hasDefault = true
+            else names.add(exported)
+        }
+    }
+
+    if (/export\s+default\b/.test(content)) hasDefault = true
+    if (/export\s*\*\s*(?:as\s+[\w$]+\s*)?from/.test(content)) wildcard = true
+
+    return { names, hasDefault, wildcard }
+}
+
+const parseImportClause = (clause) => {
+    const result = { def: null, named: [] }
+    let rest = clause.trim()
+
+    const braceStart = rest.indexOf("{")
+    if (braceStart !== -1) {
+        const braceEnd = rest.indexOf("}", braceStart)
+        const inner = rest.slice(braceStart + 1, braceEnd === -1 ? undefined : braceEnd)
+        for (const part of inner.split(",")) {
+            const cleaned = part.trim()
+            if (!cleaned || /^type\s+/.test(cleaned)) continue
+            result.named.push(cleaned.split(/\s+as\s+/)[0].trim())
+        }
+        rest = rest.slice(0, braceStart)
+    }
+
+    if (rest.includes("*")) return result
+
+    const def = rest.replace(/,/g, "").trim()
+    if (def) result.def = def
+    return result
+}
+
+const missingLocalProblems = (merged) => {
+    const problems = []
+    const cache = new Map()
+    const exportsOf = (path) => {
+        if (!cache.has(path)) cache.set(path, collectExports(merged.get(path).content))
+        return cache.get(path)
+    }
+
+    for (const [path, file] of merged) {
+        if (!path.startsWith("mobile/") || !CODE_FILE.test(path)) continue
+        const reported = new Set()
+        const report = (message) => {
+            if (reported.has(message)) return
+            reported.add(message)
+            problems.push(message)
+        }
+
+        for (const m of file.content.matchAll(LOCAL_IMPORT)) {
+            const clause = m[1]
+            const spec = m[2]
+            const target = resolveLocal(path, spec, merged)
+
+            if (!target) {
+                if (ASSET_EXTENSION.test(spec)) continue
+                report(`${path}: imports "${spec}" but that file does not exist in the project. Create it or fix the import path.`)
+                continue
+            }
+            if (!CODE_FILE.test(target)) continue
+
+            const info = exportsOf(target)
+            const parsed = parseImportClause(clause)
+
+            if (parsed.def && !info.hasDefault && !info.wildcard) {
+                report(`${path}: imports a default export from "${spec}" but ${target} has no default export. Use a named import or add the default export.`)
+            }
+            if (!info.wildcard) {
+                for (const name of parsed.named) {
+                    if (!info.names.has(name)) {
+                        report(`${path}: imports "${name}" from "${spec}" but ${target} does not export it. Export it there or import an existing name.`)
+                    }
+                }
+            }
+        }
+    }
+    return problems
+}
+
+const requiredExportProblems = (merged) => {
+    const problems = []
+    const check = (candidates, required) => {
+        const path = candidates.find((p) => merged.has(p))
+        if (!path) return
+        const info = collectExports(merged.get(path).content)
+        if (info.wildcard) return
+        const missing = required.filter((name) => !info.names.has(name))
+        if (missing.length > 0) {
+            problems.push(`${path}: missing required export${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}. Add ${missing.length === 1 ? "it" : "them"} exactly as named.`)
+        }
+    }
+    check(["mobile/components/ui.tsx", "mobile/components/ui.jsx"], REQUIRED_UI_EXPORTS)
+    check(["mobile/constants/theme.ts", "mobile/constants/theme.js"], REQUIRED_THEME_EXPORTS)
+    return problems
+}
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+const undefinedComponentProblems = (merged) => {
+    const problems = []
+    for (const [path, file] of merged) {
+        if (!path.startsWith("mobile/") || !JSX_FILE.test(path)) continue
+        const names = new Set()
+        for (const m of file.content.matchAll(JSX_TAG)) names.add(m[1])
+        for (const name of names) {
+            const bound = new RegExp(`(?<![<\\/\\w$.])${escapeRegExp(name)}(?![\\w$])`)
+            if (!bound.test(file.content)) {
+                problems.push(`${path}: <${name}> is used in JSX but is never imported or defined in this file. Import it from the correct file or define it.`)
             }
         }
     }
@@ -459,24 +631,27 @@ async function loadProjectFiles(user_id, chat_id, history) {
 }
 
 const compactHistory = (rows) =>
-    rows.map((row) => {
-        if (row.role !== "ai") return row
+    rows.flatMap((row) => {
+        if (row.role !== "ai") return [row]
         try {
             const parsed = JSON.parse(row.message)
-            return {
-                role: "ai",
-                message: JSON.stringify({
-                    ...parsed,
-                    files: [],
-                    blocks: [],
-                    changed_paths: undefined,
-                    pending_sql: undefined,
-                    problems: undefined,
-                    error_details: undefined,
-                }),
-            }
+            if (parsed?.failed) return []
+            return [
+                {
+                    role: "ai",
+                    message: JSON.stringify({
+                        ...parsed,
+                        files: [],
+                        blocks: [],
+                        changed_paths: undefined,
+                        pending_sql: undefined,
+                        problems: undefined,
+                        error_details: undefined,
+                    }),
+                },
+            ]
         } catch {
-            return row
+            return [row]
         }
     })
 
@@ -1094,6 +1269,33 @@ export async function POST(request) {
                             : Promise.resolve({ error: null }),
                     ])
 
+                    const saveFailure = async (text) => {
+                        try {
+                            await human_saved
+                            const { error: failure_err } = await supabase.from("conversations").insert({
+                                user_id,
+                                chat_id,
+                                role: "ai",
+                                message: JSON.stringify({
+                                    type: "chat",
+                                    title: "",
+                                    message: text,
+                                    design: null,
+                                    folder_name: "",
+                                    language: "tsx",
+                                    sql: "",
+                                    files: [],
+                                    blocks: [],
+                                    failed: true,
+                                }),
+                                created_at: new Date().toISOString(),
+                            })
+                            if (failure_err) console.log("failure row save failed:", failure_err.message)
+                        } catch (e) {
+                            console.log("failure row save crashed:", e?.message)
+                        }
+                    }
+
                     send({ type: "status", text: "Reading your project" })
 
                     const loaded_files = await loadProjectFiles(user_id, chat_id, history)
@@ -1276,55 +1478,39 @@ export async function POST(request) {
                     } catch (e) {
                         console.log("generation error:", e?.status ?? e?.code, e?.message)
                         const status = e?.status ?? e?.code
+                        let failure_status = 500
+                        let failure_text = "Something went wrong"
                         if (status === 503 || status === 429) {
-                            send({
-                                type: "error",
-                                status: 503,
-                                error: "The AI is busy right now. Please try again in a moment.",
-                            })
+                            failure_status = 503
+                            failure_text = "The AI is busy right now. Please try again in a moment."
                         } else if (status === 408) {
-                            send({
-                                type: "error",
-                                status: 503,
-                                error: "The AI took too long to respond. Please try again.",
-                            })
+                            failure_status = 503
+                            failure_text = "The AI took too long to respond. Please try again."
                         } else if (status === 404) {
-                            send({
-                                type: "error",
-                                status: 503,
-                                error: "The AI model is unavailable right now. Please try again later.",
-                            })
+                            failure_status = 503
+                            failure_text = "The AI model is unavailable right now. Please try again later."
                         } else if (status === 402) {
-                            send({
-                                type: "error",
-                                status: 503,
-                                error: "The AI service is unavailable right now. Please try again later.",
-                            })
+                            failure_status = 503
+                            failure_text = "The AI service is unavailable right now. Please try again later."
                         } else if (status === 401 || status === 403) {
-                            send({
-                                type: "error",
-                                status: 500,
-                                error: "The AI service is not configured correctly.",
-                            })
-                        } else {
-                            send({ type: "error", status: 500, error: "Something went wrong" })
+                            failure_status = 500
+                            failure_text = "The AI service is not configured correctly."
                         }
+                        send({ type: "error", status: failure_status, error: failure_text })
+                        await saveFailure(failure_text)
                         return
                     }
 
                     mark("generation finished")
 
-                    if (request.signal.aborted) return
-
                     console.log("model:", output.model, "finish:", output.finish, "chars:", output.text?.length)
 
                     if (!output.text && output.finish === "length") {
                         console.log("token budget used up before any visible output")
-                        send({
-                            type: "error",
-                            status: 502,
-                            error: "The model used its whole token budget before writing a reply. Please try again.",
-                        })
+                        const failure_text =
+                            "The model used its whole token budget before writing a reply. Please try again."
+                        send({ type: "error", status: 502, error: failure_text })
+                        await saveFailure(failure_text)
                         return
                     }
 
@@ -1341,11 +1527,10 @@ export async function POST(request) {
                         } else {
                             console.log("JSON parse failed. Head:", String(output.text).slice(0, 300))
                             console.log("JSON parse failed. Tail:", String(output.text).slice(-200))
-                            send({
-                                type: "error",
-                                status: 502,
-                                error: "The response was cut off. Try a simpler request or ask for fewer screens.",
-                            })
+                            const failure_text =
+                                "The response was cut off. Try a simpler request or ask for fewer screens."
+                            send({ type: "error", status: 502, error: failure_text })
+                            await saveFailure(failure_text)
                             return
                         }
                     }
@@ -1381,8 +1566,18 @@ export async function POST(request) {
                                     : { problems: [], design: null }
                             if (design_result.design) reply.design = design_result.design
                             const package_problems = missingPackageProblems(merged)
+                            const structure_problems = [
+                                ...missingLocalProblems(merged),
+                                ...requiredExportProblems(merged),
+                                ...undefinedComponentProblems(merged),
+                            ]
                             const code_problems = include_code ? await runValidation(merged) : []
-                            return [...design_result.problems, ...package_problems, ...code_problems]
+                            return [
+                                ...design_result.problems,
+                                ...package_problems,
+                                ...structure_problems,
+                                ...code_problems,
+                            ]
                         }
 
                         const can_check = Date.now() - started_at < REQUEST_LIMIT_MS - CHECK_BUDGET_MS
@@ -1412,7 +1607,6 @@ export async function POST(request) {
                                 console.log("repair skipped: out of time")
                                 break
                             }
-                            if (request.signal.aborted) break
 
                             const signature = JSON.stringify(problems.map(problemText))
                             if (signature === last_signature) {
@@ -1469,8 +1663,6 @@ export async function POST(request) {
 
                         if (initial_count > 0 && problems.length === 0) {
                             check_note = `\n\nAuto-fixed ${initial_count} problem${initial_count === 1 ? "" : "s"} found by the code check.`
-                        } else if (problems.length > 0) {
-                            check_note = `\n\nThe code check found ${problems.length} problem${problems.length === 1 ? "" : "s"} that could not be fixed automatically.`
                         }
                     }
 

@@ -815,7 +815,7 @@ export default function ChatClient() {
                 },
             })
 
-            const reply = normalizeRow({ role: "ai", message: JSON.stringify(data.response) })
+            const reply = normalizeRow({ role: "ai", message: JSON.stringify(data.response)})
             setError_details(data.error_details)
             setMessages((prev) => [...prev, reply])
             loadDetails()

@@ -32,8 +32,10 @@ import logo from "../../public/logo.png"
 // Base URL for every backend call. Set NEXT_PUBLIC_BACKEND_URL in .env.local
 // (no trailing slash needed). If it is empty, calls go to the same origin.
 const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/+$/, "")
-const apiUrl = (path) => `${BACKEND_URL}${path.startsWith("/") ? path : `/${path}`}`
-
+const apiUrl = (path) => {
+  const p = path.startsWith("/") ? path : `/${path}`
+  return p === "/api" || p.startsWith("/api/") ? p : `/api${p}`
+}
 const queryClient = new QueryClient()
 
 const MAX_IMAGES = 4
@@ -677,7 +679,8 @@ function PageContent() {
             setPanel_error(GITHUB_MESSAGES[result])
             setPanel("github")
         }
-        if (result === "connected") setGit_connected(true)
+        // No optimistic setGit_connected(true) here: the status check below
+        // reads the real row and sets the correct value.
 
         router.replace("/dashboard")
     }, [router])
@@ -705,17 +708,19 @@ function PageContent() {
         check()
     }, [user])
 
+    // GitHub connection status.
+    // Select ONLY non-secret columns: access_token is not granted to the browser.
     useEffect(() => {
         if (!user) return
 
         const check = async () => {
             const { data, error } = await supabase
                 .from("github_connections")
-                .select("*")
+                .select("user_id, github_login")
                 .eq("user_id", user.id)
 
             if (error) {
-                console.log(error)
+                console.log("github_connections check failed:", error)
                 setGit_checking(false)
                 return
             }
