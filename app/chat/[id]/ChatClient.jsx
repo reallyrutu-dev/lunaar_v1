@@ -319,31 +319,38 @@ export default function ChatClient() {
     }
 
     const loadProject = async (folder_name) => {
-        try {
-            const { data: { session: fresh } } = await supabase.auth.getSession()
-            const res = await fetch(apiUrl(`/api/project?chat_id=${chat_id}`), {
-                headers: { Authorization: `Bearer ${fresh.access_token}` },
-            })
-            const result = await res.json()
-
-            if (!res.ok) {
-                setError(result.error || "Could not load project files")
-                return null
-            }
-            if (!result.files || result.files.length === 0) {
-                setError("The build finished but no project files were found for this chat")
-                return null
-            }
-
-            const next = { folder_name: folder_name || "expo-app", files: result.files }
-            setProject(next)
-            return next
-        } catch (e) {
-            setError(e.message || "Could not load project files")
+    try {
+        const { data: { session: fresh } } = await supabase.auth.getSession()
+        const uid = fresh?.user?.id
+        if (!uid) {
+            setError("Please sign in again to load project files")
             return null
         }
-    }
 
+        const { data, error } = await supabase
+            .from("project_files")
+            .select("path, content")
+            .eq("user_id", uid)
+            .eq("chat_id", chat_id)
+            .order("path", { ascending: true })
+
+        if (error) {
+            setError(error.message || "Could not load project files")
+            return null
+        }
+        if (!data || data.length === 0) {
+            setError("The build finished but no project files were found for this chat")
+            return null
+        }
+
+        const next = { folder_name: folder_name || "expo-app", files: data }
+        setProject(next)
+        return next
+    } catch (e) {
+        setError(e.message || "Could not load project files")
+        return null
+    }
+}
     useEffect(() => {
         loadDetails()
     }, [user_id, chat_id])
